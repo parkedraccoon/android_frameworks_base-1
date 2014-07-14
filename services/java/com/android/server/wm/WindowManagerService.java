@@ -5352,6 +5352,12 @@ public class WindowManagerService extends IWindowManager.Stub
         ShutdownThread.rebootSafeMode(getUiContext(), confirm);
     }
 
+    // Called by window manager policy.  Not exposed externally.
+    @Override
+    public boolean isShutdownSequenceStarted() {
+        return ShutdownThread.isStarted();
+    }
+
     @Override
     public void setInputFilter(IInputFilter filter) {
         if (!checkCallingPermission(android.Manifest.permission.FILTER_EVENTS, "setInputFilter()")) {
@@ -11052,6 +11058,12 @@ public class WindowManagerService extends IWindowManager.Stub
         mAnimator.removeDisplayLocked(displayId);
     }
 
+    /* @hide */
+    @Override
+    public void toggleGlobalMenu() {
+        mPolicy.toggleGlobalMenu();
+    }
+
     @Override
     public void onDisplayChanged(int displayId) {
         mH.sendMessage(mH.obtainMessage(H.DO_DISPLAY_CHANGED, displayId, 0));
@@ -11069,6 +11081,12 @@ public class WindowManagerService extends IWindowManager.Stub
         return mWindowMap;
     }
 
+    @Override
+    public void toggleStatusBar() {
+        mPolicy.toggleStatusBar();
+    }
+
+    /* @hide */
     @Override
     public void addSystemUIVisibilityFlag(int flag) {
         mLastStatusBarVisibility |= flag;

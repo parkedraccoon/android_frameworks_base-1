@@ -2451,8 +2451,13 @@ public final class Settings {
         /**
          * Whether incall glowpad background is transparent or not.  The value is
          * boolean (1 or 0).
-        */
+         */
         public static final String INCALL_GLOWPAD_TRANSPARENCY = "incall_glowpad_transparency";
+
+        /**
+         * Padding above and below dialpad keys in dialer.
+         */
+        public static final String DIALKEY_PADDING = "dialkey_padding";
 
         /**
          * Whether the hearing aid is enabled. The value is
@@ -4326,13 +4331,6 @@ public final class Settings {
         public static final String STATUSBAR_CLOCK_DATE_FORMAT = "statusbar_clock_date_format";
 
         /**
-         * Performance profile
-         * @see config_perf_profile_prop in frameworks/base/core/res/res/values/config.xml
-         * @hide
-         */
-        public static final String PERFORMANCE_PROFILE = "performance_profile";
-
-        /**
          * Config for advanced power menu
          *
          * @hide
@@ -4522,11 +4520,11 @@ public final class Settings {
         public static final String MENU_VISIBILITY = "menu_visibility";
 
         /**
-         * Should the non-intrusive incall ui be used
+         * Whether incomming call UI stays in background
          *
          * @hide
          */
-        public static final String NON_INTRUSIVE_INCALL = "non_intrusive_incall";
+        public static final String CALL_UI_IN_BACKGROUND = "call_ui_in_background";
 
         /**
          * Whether flip action during incomming call should mute or dismiss
@@ -7023,11 +7021,17 @@ public final class Settings {
         public static final String DEFAULT_THEME_COMPONENTS = "default_theme_components";
 
         /**
-         * Whether the default theme was applied on the first boot.
+         * Performance profile
+         * @see config_perf_profile_prop in frameworks/base/core/res/res/values/config.xml
          * @hide
          */
-        public static final String DEFAULT_THEME_APPLIED_ON_FIRST_BOOT =
-                "default_theme_applied_on_first_boot";
+        public static final String PERFORMANCE_PROFILE = "performance_profile";
+
+        /**
+         * App-based performance profile selection
+         * @hide
+         */
+        public static final String APP_PERFORMANCE_PROFILES_ENABLED = "app_perf_profiles_enabled";
 
         /**
          * This are the settings to be backed up.

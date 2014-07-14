@@ -33,7 +33,7 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.ThemeUtils;
 import android.content.res.AssetManager;
 import android.content.res.Configuration;
-import android.content.res.CustomTheme;
+import android.content.res.ThemeConfig;
 import android.content.res.IThemeChangeListener;
 import android.content.res.IThemeService;
 import android.database.Cursor;
@@ -70,7 +70,7 @@ import java.util.zip.ZipFile;
 
 import static android.content.pm.ThemeUtils.SYSTEM_THEME_PATH;
 import static android.content.pm.ThemeUtils.THEME_BOOTANIMATION_PATH;
-import static android.content.res.CustomTheme.HOLO_DEFAULT;
+import static android.content.res.ThemeConfig.HOLO_DEFAULT;
 
 import java.util.List;
 
@@ -233,32 +233,18 @@ public class ThemeService extends IThemeService.Stub {
         final ContentResolver resolver = mContext.getContentResolver();
         final String defaultThemePkg = Settings.Secure.getString(resolver,
                 Settings.Secure.DEFAULT_THEME_PACKAGE);
-        final boolean shouldApply = !TextUtils.isEmpty(defaultThemePkg) &&
-                Settings.Secure.getInt(resolver,
-                        Settings.Secure.DEFAULT_THEME_APPLIED_ON_FIRST_BOOT, 0) == 0;
-        if (shouldApply) {
+        if (!TextUtils.isEmpty(defaultThemePkg)) {
             String defaultThemeComponents = Settings.Secure.getString(resolver,
                     Settings.Secure.DEFAULT_THEME_COMPONENTS);
             List<String> components;
             if (TextUtils.isEmpty(defaultThemeComponents)) {
-                components = new ArrayList<String>(9);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_FONTS);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_LAUNCHER);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_ALARMS);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_BOOT_ANIM);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_ICONS);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_LOCKSCREEN);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_NOTIFICATIONS);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_OVERLAYS);
-                components.add(ThemesContract.ThemesColumns.MODIFIES_RINGTONES);
+                components = ThemeUtils.getAllComponents();
             } else {
                 components = new ArrayList<String>(
                         Arrays.asList(defaultThemeComponents.split("\\|")));
             }
             try {
                 requestThemeChange(defaultThemePkg, components);
-                Settings.Secure.putInt(resolver,
-                        Settings.Secure.DEFAULT_THEME_APPLIED_ON_FIRST_BOOT, 1);
             } catch (RemoteException e) {
                 Log.w(TAG, "Unable to set default theme", e);
             }
@@ -534,8 +520,8 @@ public class ThemeService extends IThemeService.Stub {
             final long token = Binder.clearCallingIdentity();
             try {
                 Configuration config = am.getConfiguration();
-                CustomTheme.Builder themeBuilder = createBuilderFrom(config, components);
-                config.customTheme = themeBuilder.build();
+                ThemeConfig.Builder themeBuilder = createBuilderFrom(config, components);
+                config.themeConfig = themeBuilder.build();
                 am.updateConfiguration(config);
             } catch (RemoteException e) {
                 return false;
@@ -546,20 +532,27 @@ public class ThemeService extends IThemeService.Stub {
         return true;
     }
 
-    private CustomTheme.Builder createBuilderFrom(Configuration config, List<String> components) {
-        CustomTheme.Builder builder = new CustomTheme.Builder(config.customTheme);
+    private ThemeConfig.Builder createBuilderFrom(Configuration config, List<String> components) {
+        ThemeConfig.Builder builder = new ThemeConfig.Builder(config.themeConfig);
 
         if (components.contains(ThemesContract.ThemesColumns.MODIFIES_ICONS)) {
-            builder.icons(mPkgName);
+            builder.defaultIcon(mPkgName);
         }
 
         if (components.contains(ThemesContract.ThemesColumns.MODIFIES_OVERLAYS)) {
-            builder.overlay(mPkgName);
-            builder.systemUi(mPkgName);
+            builder.defaultOverlay(mPkgName);
         }
 
         if (components.contains(ThemesContract.ThemesColumns.MODIFIES_FONTS)) {
-            builder.fonts(mPkgName);
+            builder.defaultFont(mPkgName);
+        }
+
+        if (components.contains(ThemesContract.ThemesColumns.MODIFIES_STATUS_BAR)) {
+            builder.overlay("com.android.systemui", mPkgName);
+        }
+
+        if (components.contains(ThemesContract.ThemesColumns.MODIFIES_NAVIGATION_BAR)) {
+            builder.overlay(ThemeConfig.SYSTEMUI_NAVBAR_PKG, mPkgName);
         }
 
         return builder;
@@ -654,15 +647,9 @@ public class ThemeService extends IThemeService.Stub {
     }
 
     private void broadcastThemeChange(List<String> components) {
-        StringBuilder sb = new StringBuilder();
-        String delimiter = "";
-        for (String comp : components) {
-            sb.append(delimiter);
-            sb.append(comp);
-            delimiter = "|";
-        }
         final Intent intent = new Intent(ThemeUtils.ACTION_THEME_CHANGED);
-        intent.putExtra("components", sb.toString());
+        ArrayList componentsArrayList = new ArrayList(components);
+        intent.putStringArrayListExtra("components", componentsArrayList);
         mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
     }
 
