@@ -449,7 +449,8 @@ public class PackageManagerService extends IPackageManager.Stub {
     final ActivityIntentResolver mReceivers =
             new ActivityIntentResolver();
 
-    final HashSet<String> mAllowances = new HashSet<String>();
+    final HashMap<Signature, HashSet<String>> mSignatureAllowances
+            = new HashMap<Signature, HashSet<String>>();
 
     // All available services, for your resolving pleasure.
     final ServiceIntentResolver mServices = new ServiceIntentResolver();
@@ -1842,15 +1843,32 @@ public class PackageManagerService extends IPackageManager.Stub {
                         XmlUtils.skipCurrentTag(parser);
                         continue;
                     }
-                    String sharedUserId = parser.getAttributeValue(null, "sharedUserId");
-                    if (sharedUserId == null) {
+                    String signature = parser.getAttributeValue(null, "signature");
+                    if (signature == null) {
                         Slog.w(TAG,
-                                "<allow-permission> without uid at "
+                                "<allow-permission> without signature at "
                                         + parser.getPositionDescription());
                         XmlUtils.skipCurrentTag(parser);
                         continue;
                     }
-                    mAllowances.add(sharedUserId + ":" + perm);
+                    Signature sig = null;
+                    try {
+                        sig = new Signature(signature);
+                    } catch (IllegalArgumentException e) {
+                        // sig will be null so we will log it below
+                    }
+                    if (sig != null) {
+                        HashSet<String> perms = mSignatureAllowances.get(sig);
+                        if (perms == null) {
+                            perms = new HashSet<String>();
+                            mSignatureAllowances.put(sig, perms);
+                        }
+                        perms.add(perm);
+                    } else {
+                        Slog.w(TAG,
+                                "<allow-permission> with bad signature at "
+                                        + parser.getPositionDescription());
+                    }
                     XmlUtils.skipCurrentTag(parser);
 
                 } else if ("library".equals(name)) {
@@ -2590,6 +2608,16 @@ public class PackageManagerService extends IPackageManager.Stub {
                         + ". It is required by the application");
             }
         }
+    }
+
+    private boolean isAllowedSignature(PackageParser.Package pkg, String permissionName) {
+        for (Signature pkgSig : pkg.mSignatures) {
+            HashSet<String> perms = mSignatureAllowances.get(pkgSig);
+            if (perms != null && perms.contains(permissionName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void grantPermission(String packageName, String permissionName) {
@@ -5849,8 +5877,9 @@ public class PackageManagerService extends IPackageManager.Stub {
     }
 
     private byte[] getFileCrC(String path) {
+        ZipFile zfile = null;
         try {
-            ZipFile zfile = new ZipFile(path);
+            zfile = new ZipFile(path);
             ZipEntry entry = zfile.getEntry("META-INF/MANIFEST.MF");
             if (entry == null) {
                 Log.e(TAG, "Unable to get MANIFEST.MF from " + path);
@@ -5861,6 +5890,8 @@ public class PackageManagerService extends IPackageManager.Stub {
             if (crc == -1) Log.e(TAG, "Unable to get CRC for " + path);
             return ByteBuffer.allocate(8).putLong(crc).array();
         } catch (Exception e) {
+        } finally {
+            IoUtils.closeQuietly(zfile);
         }
         return null;
     }
@@ -6380,12 +6411,11 @@ public class PackageManagerService extends IPackageManager.Stub {
                 bp.packageSetting.signatures.mSignatures, pkg.mSignatures)
                         == PackageManager.SIGNATURE_MATCH)
                 || (compareSignatures(mPlatformPackage.mSignatures, pkg.mSignatures)
-                        == PackageManager.SIGNATURE_MATCH)
-                || (pkg.mSharedUserId != null
-                        && mAllowances.contains(pkg.mSharedUserId + ":" + perm));
+                        == PackageManager.SIGNATURE_MATCH);
         if (!allowed && (bp.protectionLevel
                 & PermissionInfo.PROTECTION_FLAG_SYSTEM) != 0) {
-            if (isSystemApp(pkg)) {
+            boolean allowedSig = isAllowedSignature(pkg, perm);
+            if (isSystemApp(pkg) || allowedSig) {
                 // For updated system applications, a system permission
                 // is granted only if it had been defined by the original application.
                 if (isUpdatedSystemApp(pkg)) {
@@ -6418,7 +6448,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                         }
                     }
                 } else {
-                    allowed = isPrivilegedApp(pkg);
+                    allowed = isPrivilegedApp(pkg) || allowedSig;
                 }
             }
         }
@@ -10394,6 +10424,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                         false, //installed
                         true,  //stopped
                         true,  //notLaunched
+                        false, //heads up
                         false, //blocked
                         null, null, null);
                 if (!isSystemApp(ps)) {
@@ -11031,6 +11062,55 @@ public class PackageManagerService extends IPackageManager.Stub {
                 ? null
                 : new ComponentName(preferred.activityInfo.packageName,
                         preferred.activityInfo.name);
+    }
+
+    @Override
+    public void setHeadsUpSetting(String appPackageName,
+            boolean enabled, int userId) {
+        if (!sUserManager.exists(userId)) return;
+        setHeadsUp(appPackageName, enabled, userId);
+    }
+
+    @Override
+    public boolean getHeadsUpSetting(String packageName, int userId) {
+        if (!sUserManager.exists(userId)) return false;
+        int uid = Binder.getCallingUid();
+        enforceCrossUserPermission(uid, userId, false, "get heads up setting");
+        // reader
+        synchronized (mPackages) {
+            return mSettings.getHeadsUpSettingLPr(packageName, userId);
+        }
+    }
+
+    private void setHeadsUp(final String packageName,
+            final boolean enabled, final int userId) {
+        PackageSetting pkgSetting;
+        final int uid = Binder.getCallingUid();
+        final int permission = mContext.checkCallingPermission(
+                android.Manifest.permission.CHANGE_HEADS_UP_STATE);
+        final boolean allowedByPermission = (permission == PackageManager.PERMISSION_GRANTED);
+        enforceCrossUserPermission(uid, userId, false, "set heads up setting");
+
+        synchronized (mPackages) {
+            pkgSetting = mSettings.mPackages.get(packageName);
+            if (pkgSetting == null) {
+                throw new IllegalArgumentException(
+                        "Unknown package: " + packageName);
+            }
+            // Allow root and verify that userId is not being specified by a different user
+            if (!allowedByPermission && !UserHandle.isSameApp(uid, pkgSetting.appId)) {
+                throw new SecurityException(
+                        "Permission Denial: attempt to change heads up state from pid="
+                        + Binder.getCallingPid()
+                        + ", uid=" + uid + ", package uid=" + pkgSetting.appId);
+            }
+            if (pkgSetting.isHeadsUp(userId) == enabled) {
+                // Nothing to do
+                return;
+            }
+            pkgSetting.setHeadsUp(enabled, userId);
+            mSettings.writePackageRestrictionsLPr(userId);
+        }
     }
 
     @Override

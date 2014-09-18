@@ -227,6 +227,14 @@ public class ThemesContract {
          * <P>Default: 0</P>
          */
         public static final String LAST_UPDATE_TIME = "updateTime";
+
+        /**
+         * install time in millisecs. When the row is inserted this column
+         * is populated by the PackageInfo.
+         * <P>Type: INTEGER</P>
+         * <P>Default: 0</P>
+         */
+        public static final String INSTALL_TIME = "install_time";
     }
 
     /**
@@ -455,6 +463,12 @@ public class ThemesContract {
         public static final String STATUSBAR_CLOCK_TEXT_COLOR = "statusbar_clock_text_color";
 
         /**
+         * Cached image of the themed navigation bar background.
+         * <P>Type: BLOB (bitmap)</P>
+         */
+        public static final String NAVBAR_BACKGROUND = "navbar_background";
+
+        /**
          * Cached image of the themed back button.
          * <P>Type: BLOB (bitmap)</P>
          */
@@ -501,6 +515,12 @@ public class ThemesContract {
          * <P>Type: BLOB (bitmap)</P>
          */
         public static final String STYLE_PREVIEW = "style_preview";
+
+        /**
+         * Cached thumbnail preview of UI controls representing the theme's style
+         * <P>Type: BLOB (bitmap)</P>
+         */
+        public static final String STYLE_THUMBNAIL = "style_thumbnail";
 
         /**
          * Cached thumbnail of the theme's boot animation

@@ -261,6 +261,8 @@ public class KeyguardViewMediator {
 
     private ProfileManager mProfileManager;
 
+    private int mLidState = WindowManagerPolicy.WindowManagerFuncs.LID_ABSENT;
+
     /**
      * The volume applied to the lock/unlock sounds.
      */
@@ -449,7 +451,7 @@ public class KeyguardViewMediator {
                     break;
                 case READY:
                     synchronized (this) {
-                        if (isShowing() && !isSecure()) {
+                        if (isShowing()) {
                             resetStateLocked(null);
                         }
                     }
@@ -528,6 +530,10 @@ public class KeyguardViewMediator {
         filter.addAction(SHAKE_SECURE_TIMER);
         filter.addAction(DELAYED_KEYGUARD_ACTION);
         mContext.registerReceiver(mBroadcastReceiver, filter);
+        mContext.registerReceiver(mBroadcastReceiver,
+                new IntentFilter(WindowManagerPolicy.ACTION_LID_STATE_CHANGED));
+        mContext.registerReceiver(mBroadcastReceiver, new IntentFilter(DISMISS_KEYGUARD_SECURELY_ACTION),
+                android.Manifest.permission.CONTROL_KEYGUARD, null);
 
         mKeyguardDisplayManager = new KeyguardDisplayManager(context);
 
@@ -571,14 +577,6 @@ public class KeyguardViewMediator {
         int lockSoundDefaultAttenuation = context.getResources().getInteger(
                 com.android.internal.R.integer.config_lockSoundVolumeDb);
         mLockSoundVolume = (float)Math.pow(10, (float)lockSoundDefaultAttenuation/20);
-    }
-
-    public void setBackgroundBitmap(Bitmap bmp) {
-        mKeyguardViewManager.setBackgroundBitmap(bmp);
-    }
-
-    public void setWallpaper(Bitmap bmp) {
-        mKeyguardViewManager.setWallpaper(bmp);
     }
 
     /**
@@ -750,12 +748,9 @@ public class KeyguardViewMediator {
             if (DEBUG) Log.d(TAG, "isKeyguardDisabled: keyguard is disabled by setting");
             return true;
         }
-        Profile profile = mProfileManager.getActiveProfile();
-        if (profile != null) {
-            if (profile.getScreenLockMode() == Profile.LockMode.DISABLE) {
-                if (DEBUG) Log.d(TAG, "isKeyguardDisabled: keyguard is disabled by profile");
-                return true;
-            }
+        if (mLockPatternUtils.getActiveProfileLockMode() == Profile.LockMode.DISABLE) {
+            if (DEBUG) Log.d(TAG, "isKeyguardDisabled: keyguard is disabled by profile");
+            return true;
         }
         return false;
     }
@@ -1097,6 +1092,19 @@ public class KeyguardViewMediator {
                     KeyguardHostView.shakeSecureNow();
                     adjustStatusBarLocked();
                 }
+            } else if (WindowManagerPolicy.ACTION_LID_STATE_CHANGED.equals(intent.getAction())) {
+                final int state = intent.getIntExtra(WindowManagerPolicy.EXTRA_LID_STATE,
+                        WindowManagerPolicy.WindowManagerFuncs.LID_ABSENT);
+                synchronized (KeyguardViewMediator.this) {
+                    if (state != mLidState) {
+                        mLidState = state;
+                        mUpdateMonitor.dispatchLidStateChange(state);
+                    }
+                }
+            } else if (DISMISS_KEYGUARD_SECURELY_ACTION.equals(intent.getAction())) {
+                synchronized (KeyguardViewMediator.this) {
+                    dismiss();
+                }
             }
         }
     };
@@ -1270,6 +1278,13 @@ public class KeyguardViewMediator {
 
             // If music is playing, don't play the sound
             if (mAudioManager.isMusicActive()) return;
+
+            // If user is in a call, don't play the sound
+            TelephonyManager tm = (TelephonyManager) mContext.
+                    getSystemService(Context.TELEPHONY_SERVICE);
+            if (tm != null  && (tm.isOffhook() || tm.isRinging())) {
+                return;
+            }
 
             mLockSoundStreamId = mLockSounds.play(whichSound,
                     mLockSoundVolume, mLockSoundVolume, 1/*priortiy*/, 0/*loop*/, 1.0f/*rate*/);
